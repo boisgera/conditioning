@@ -35,7 +35,8 @@ Moreover, if $X$ is integrable, $X|Y$ can be chosen so that:
 -/
 
 /-!
-Proof sketch (of the revised statement, as formalised below):
+Proof sketch (of the revised statement and its explicit variants, as
+formalised below):
 
  * Conditional distribution. Let $μ$ be the law of $(Y, X)$ on
    $[-∞, ∞] × [-∞, ∞]$ and $P_Y$ its first marginal. Since $[-∞, ∞]$ is
@@ -43,32 +44,46 @@ Proof sketch (of the revised statement, as formalised below):
    from $[-∞, ∞]$ to $[-∞, ∞]$: $κ(y)$ is the conditional law of $X$ given
    $Y = y$ (`condDistrib X Y volume`, `compProd_map_condDistrib`).
 
- * Representation of the kernel. Any Markov kernel into a standard Borel
-   space is the image of $λ$ by a jointly measurable map
-   (`Kernel.exists_measurable_map_eq_unitInterval`, Kallenberg Lemma 4.22):
-   there is a measurable $f : [-∞, ∞] × [0, 1] → [-∞, ∞]$ such that, for
-   every $y$, the law of $f(y, ·)$ under $λ$ is $κ(y)$.
-
  * Law lemma (`map_eq_compProd`). If $Ψ$ is measurable and, for $P_Y$-almost
    every $y$, the law of $Ψ(y, ·)$ under $λ$ is $κ(y)$, then by Tonelli the
    law of $(u, v) ↦ (Y(u), Ψ(Y(u), v))$ under $λ ⊗ λ$ is
    $∫ δ_{Y(u)} ⊗ κ(Y(u)) \, du = P_Y ⊗ κ = μ$. This gives condition 1.
 
- * If $X$ is not integrable, take $X|Y := f$: conditions 0 and 1 hold and
-   there is nothing more to prove.
+ * Integrability of the conditional law (`ae_lintegral_condDistrib_lt_top`).
+   Let $N(x) = |x|$ for $x$ finite and $N(±∞) = ∞$ (`extNorm`), and
+   $G(y) = ∫ N \, dκ(y)$. Then $∫ G \, dP_Y = ∫ N(x) \, μ(dy, dx) = ∫ N(X)$,
+   which is finite when $X$ is integrable, so $G < ∞$ $P_Y$-almost
+   everywhere. A measurable function $g$ with $∫ N(g) < ∞$ is finite almost
+   everywhere and integrable (`integrableEReal_of_lintegral_lt_top`); so if
+   the law of $Ψ(y, ·)$ is $κ(y)$ and $G(y) < ∞$, the section $Ψ(y, ·)$ is
+   integrable: this gives condition 2.
 
- * If $X$ is integrable, let $F(x) = |x|$ for $x$ finite, $F(±∞) = ∞$, and
-   $G(y) = ∫ F \, dκ(y)$. Then $∫ G \, dP_Y = ∫ F \, dμ(·, x) = ∫ F(X) < ∞$,
-   so $G < ∞$ $P_Y$-almost everywhere. Set $(X|Y)(y, v) := 0$ if
-   $G(y) = ∞$ and $(X|Y)(y, v) := f(y, v)$ otherwise.
-   - Conditions 0 and 1 still hold, by the law lemma, since $X|Y$ only
-     differs from $f$ on a $P_Y$-null set of $y$.
-   - Condition 2: if $G(y) = ∞$ the section is $0$; otherwise
-     $∫ F(f(y, v)) \, dv = G(y) < ∞$, so $f(y, ·)$ is finite almost
-     everywhere and integrable.
-   - Conditions 3 and 4: by condition 1, the function
-     $(u, v) ↦ (X|Y)(Y(u), v)$ on $[0, 1]^2$ has the same law as $X$, hence
-     is integrable with the same integral; conclude by Fubini.
+ * Fubini (`integrable_and_integral_eq_of_map_eq`). If condition 1 holds,
+   the function $(u, v) ↦ Ψ(Y(u), v)$ on $[0, 1]^2$ has the same law as $X$,
+   hence is integrable with the same integral when $X$ is; Fubini gives
+   conditions 3 and 4.
+
+ * `exists_cond`. Any Markov kernel into a standard Borel space is the
+   image of $λ$ by a jointly measurable map
+   (`Kernel.exists_measurable_map_eq_unitInterval`, Kallenberg Lemma 4.22):
+   there is a measurable $f$ such that, for every $y$, the law of $f(y, ·)$
+   under $λ$ is $κ(y)$. If $X$ is not integrable, take $X|Y := f$. If it
+   is, set $(X|Y)(y, v) := 0$ if $G(y) = ∞$ and $f(y, v)$ otherwise; it
+   differs from $f$ only on a $P_Y$-null set of $y$, so the law lemma still
+   applies, and every section is integrable.
+
+ * `condQuantile_spec`. Instead of $f$, use the conditional quantile
+   $Q(y, v) = \inf \{x \mid v ≤ F(y, x)\}$, with $F(y, x) = κ(y)([-∞, x])$.
+   By right-continuity of $F(y, ·)$ we have the Galois connection
+   $Q(y, v) ≤ x \iff v ≤ F(y, x)$ (`sInf_le_iff_le_measure_Iic`). Hence
+   $\{Q ≤ x\} = \{(y, v) \mid v ≤ F(y, x)\}$ is measurable, so $Q$ is
+   measurable; and $λ\{v \mid Q(y, v) ≤ x\} = λ([0, F(y, x)]) = F(y, x)$, so
+   the law of $Q(y, ·)$ is $κ(y)$ for every $y$. Monotonicity in $v$ is
+   clear. Without modification, condition 2 holds for $P_Y$-almost every $y$.
+
+ * `condQuantilePatched_spec`. For integrable $X$, set the quantile to $0$
+   where $G(y) = ∞$, as for `exists_cond`: condition 2 then holds for every
+   $y$, and monotonicity is preserved since constant sections are monotone.
 -/
 
 open MeasureTheory ProbabilityTheory unitInterval
