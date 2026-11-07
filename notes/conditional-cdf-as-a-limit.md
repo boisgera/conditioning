@@ -114,3 +114,19 @@ is involved, which proves part 3. $\blacksquare$
   limit. It goes through Radon–Nikodym derivatives at rational $x$
   (`condCDF`). By the theorem, the two agree $ν$-almost everywhere, as any
   two versions of the conditional law must.
+
+## Formalisation
+
+The theorem is formalised in [`Cond/CDFLimit.lean`](../Cond/CDFLimit.lean):
+
+- part 1: `CDFLimit.ae_tendsto_approxCDF`;
+- part 2: `CDFLimit.ae_forall_tendsto_approxCDF`, for rational $x$, $x = ±∞$
+  and continuity points (the equivalence with weak convergence is not
+  formalised);
+- part 3: `CDFLimit.tendsto_approxCDF_of_atom`, and
+  `CDFLimit.condDistrib_Iic_of_atom` for the elementary formula at atoms.
+
+The Lean version is slightly more general: the distance is
+$d(s, t) = |φ(s) - φ(t)|$ for an arbitrary measurable embedding
+$φ : [-∞, ∞] → ℝ$, not necessarily continuous. Only the Borel structure
+transported by $φ$ matters for the proof.
