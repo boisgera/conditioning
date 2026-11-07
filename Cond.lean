@@ -115,6 +115,79 @@ def IntegrableEReal {α : Type*} [MeasurableSpace α] (f : α → EReal) (μ : M
     Prop :=
   (∀ᵐ x ∂μ, f x ≠ ⊥ ∧ f x ≠ ⊤) ∧ Integrable (fun x ↦ (f x).toReal) μ
 
+/-- `|x|` for `x` finite, `∞` for `x = ±∞`: `f` is `IntegrableEReal` iff
+`∫⁻ extNorm ∘ f < ∞`. -/
+noncomputable def extNorm (x : EReal) : ENNReal := if x = ⊤ ∨ x = ⊥ then ⊤ else ‖x.toReal‖ₑ
+
+lemma measurable_extNorm : Measurable extNorm :=
+  Measurable.ite ((measurableSet_singleton ⊤).union (measurableSet_singleton ⊥))
+    measurable_const measurable_ereal_toReal.enorm
+
+lemma enorm_toReal_le_extNorm (x : EReal) : ‖x.toReal‖ₑ ≤ extNorm x := by
+  simp only [extNorm]; split_ifs <;> simp
+
+lemma integrableEReal_of_lintegral_lt_top {α : Type*} [MeasurableSpace α] {μ : Measure α}
+    {f : α → EReal} (hf : Measurable f) (h : ∫⁻ a, extNorm (f a) ∂μ < ⊤) :
+    IntegrableEReal f μ := by
+  refine ⟨(ae_lt_top (measurable_extNorm.comp hf) h.ne).mono fun a ha ↦ ?_, ?_⟩
+  · by_contra hfa
+    have h' : f a = ⊤ ∨ f a = ⊥ := by tauto
+    have : extNorm (f a) = ⊤ := by simp only [extNorm, h', ite_true]
+    exact ha.ne this
+  · exact ⟨(measurable_ereal_toReal.comp hf).aestronglyMeasurable,
+      hasFiniteIntegral_iff_enorm.mpr
+        ((lintegral_mono fun a ↦ enorm_toReal_le_extNorm _).trans_lt h)⟩
+
+lemma lintegral_extNorm_lt_top {X : I → EReal} (hXi : IntegrableEReal X volume) :
+    ∫⁻ u, extNorm (X u) < ⊤ := by
+  have hae : ∀ᵐ u ∂(volume : Measure I), extNorm (X u) = ‖(X u).toReal‖ₑ :=
+    hXi.1.mono fun u hu ↦ by simp [extNorm, hu.1, hu.2]
+  rw [lintegral_congr_ae hae]
+  exact hasFiniteIntegral_iff_enorm.mp hXi.2.2
+
+/-- If `X` is integrable, then the conditional law `κ(y)` is integrable (and
+finite a.s.) for `P_Y`-almost every `y`. -/
+lemma ae_lintegral_condDistrib_lt_top {X Y : I → EReal} (hX : AEMeasurable X)
+    (hY : AEMeasurable Y) (hXi : IntegrableEReal X volume) :
+    ∀ᵐ y ∂(volume.map Y), ∫⁻ x, extNorm x ∂(condDistrib X Y volume y) < ⊤ := by
+  refine ae_lt_top measurable_extNorm.lintegral_kernel ?_
+  have h := Measure.lintegral_compProd (μ := volume.map Y) (κ := condDistrib X Y volume)
+    (measurable_extNorm.comp measurable_snd)
+  simp only [Function.comp_apply] at h
+  rw [← h, compProd_map_condDistrib hY hX, lintegral_map' (f := fun q : EReal × EReal ↦ extNorm q.2)
+    (measurable_extNorm.comp measurable_snd).aemeasurable (hY.prodMk hX)]
+  exact (lintegral_extNorm_lt_top hXi).ne
+
+/-- Fubini for any `Ψ` reproducing the law of `(Y, X)`: conditions 3 and 4. -/
+lemma integrable_and_integral_eq_of_map_eq {X Y : I → EReal} (hX : AEMeasurable X)
+    (hY : AEMeasurable Y) {Ψ : EReal × I → EReal} (hΨ : Measurable Ψ)
+    (hΨlaw : (volume : Measure (I × I)).map (fun p ↦ (Y p.1, Ψ (Y p.1, p.2))) =
+      (volume : Measure I).map (fun u ↦ (Y u, X u)))
+    (hXi : IntegrableEReal X volume) :
+    Integrable (fun u ↦ ∫ v, (Ψ (Y u, v)).toReal) ∧
+      ∫ u, (X u).toReal = ∫ u, ∫ v, (Ψ (Y u, v)).toReal := by
+  have hYfst : AEMeasurable (fun p : I × I ↦ Y p.1) volume := by
+    rw [Measure.volume_eq_prod]
+    exact hY.comp_quasiMeasurePreserving (measurePreserving_fst.quasiMeasurePreserving)
+  have hk : Measurable (fun q : EReal × EReal ↦ q.2.toReal) :=
+    measurable_ereal_toReal.comp measurable_snd
+  have hT : AEMeasurable (fun p : I × I ↦ (Y p.1, Ψ (Y p.1, p.2))) volume :=
+    hYfst.prodMk (hΨ.comp_aemeasurable (hYfst.prodMk measurable_snd.aemeasurable))
+  have hYX : AEMeasurable (fun u ↦ (Y u, X u)) volume := hY.prodMk hX
+  have h1 : Integrable (fun q : EReal × EReal ↦ q.2.toReal) (volume.map (fun u ↦ (Y u, X u))) :=
+    (integrable_map_measure hk.aestronglyMeasurable hYX).mpr hXi.2
+  rw [← hΨlaw] at h1
+  have h2 : Integrable (fun p : I × I ↦ (Ψ (Y p.1, p.2)).toReal) (volume.prod volume) :=
+    (integrable_map_measure hk.aestronglyMeasurable hT).mp h1
+  refine ⟨h2.integral_prod_left, ?_⟩
+  rw [← integral_prod _ h2, ← Measure.volume_eq_prod]
+  calc ∫ u, (X u).toReal
+      = ∫ q, q.2.toReal ∂(volume.map (fun u ↦ (Y u, X u))) :=
+        (integral_map hYX hk.aestronglyMeasurable).symm
+    _ = ∫ q, q.2.toReal ∂((volume : Measure (I × I)).map
+          (fun p ↦ (Y p.1, Ψ (Y p.1, p.2)))) := by rw [hΨlaw]
+    _ = _ := integral_map hT hk.aestronglyMeasurable
+
 /-- Formal version of the revised statement. `Φ` plays the role of `X|Y`.
 "Lebesgue-Borel measurable" is rendered as `AEMeasurable` (with respect to
 the Lebesgue measure `volume` on `I = [0, 1]`); integrals of extended-real
@@ -141,89 +214,154 @@ theorem exists_cond (X Y : I → EReal) (hX : AEMeasurable X) (hY : AEMeasurable
         ∫ u, (X u).toReal = ∫ u, ∫ v, (Φ (Y u, v)).toReal) := by
   set κ := condDistrib X Y volume
   obtain ⟨f, hf, hfκ⟩ := κ.exists_measurable_map_eq_unitInterval
-  -- the law of `(Y, X)` is reproduced by any measurable `Ψ` whose sections have law `κ`
   have hlaw : ∀ Ψ : EReal × I → EReal, Measurable Ψ →
       (∀ᵐ y ∂(volume.map Y), volume.map (fun v ↦ Ψ (y, v)) = κ y) →
       (volume : Measure (I × I)).map (fun p ↦ (Y p.1, Ψ (Y p.1, p.2))) =
         (volume : Measure I).map (fun u ↦ (Y u, X u)) := fun Ψ hΨ h ↦
     (map_eq_compProd hY κ hΨ h).trans (compProd_map_condDistrib hY hX)
-  have hYfst : AEMeasurable (fun p : I × I ↦ Y p.1) volume := by
-    rw [Measure.volume_eq_prod]
-    exact hY.comp_quasiMeasurePreserving (measurePreserving_fst.quasiMeasurePreserving)
-  have hk : Measurable (fun q : EReal × EReal ↦ q.2.toReal) :=
-    measurable_ereal_toReal.comp measurable_snd
-  -- Fubini, for any `Ψ` reproducing the law of `(Y, X)`
-  have hfub : ∀ Ψ : EReal × I → EReal, Measurable Ψ →
-      (volume : Measure (I × I)).map (fun p ↦ (Y p.1, Ψ (Y p.1, p.2))) =
-        (volume : Measure I).map (fun u ↦ (Y u, X u)) →
-      IntegrableEReal X volume →
-      Integrable (fun u ↦ ∫ v, (Ψ (Y u, v)).toReal) ∧
-        ∫ u, (X u).toReal = ∫ u, ∫ v, (Ψ (Y u, v)).toReal := by
-    intro Ψ hΨ hΨlaw hXi
-    have hT : AEMeasurable (fun p : I × I ↦ (Y p.1, Ψ (Y p.1, p.2))) volume :=
-      hYfst.prodMk (hΨ.comp_aemeasurable (hYfst.prodMk measurable_snd.aemeasurable))
-    have hYX : AEMeasurable (fun u ↦ (Y u, X u)) volume := hY.prodMk hX
-    have h1 : Integrable (fun q : EReal × EReal ↦ q.2.toReal) (volume.map (fun u ↦ (Y u, X u))) :=
-      (integrable_map_measure hk.aestronglyMeasurable hYX).mpr hXi.2
-    rw [← hΨlaw] at h1
-    have h2 : Integrable (fun p : I × I ↦ (Ψ (Y p.1, p.2)).toReal) (volume.prod volume) :=
-      (integrable_map_measure hk.aestronglyMeasurable hT).mp h1
-    refine ⟨h2.integral_prod_left, ?_⟩
-    rw [← integral_prod _ h2, ← Measure.volume_eq_prod]
-    calc ∫ u, (X u).toReal
-        = ∫ q, q.2.toReal ∂(volume.map (fun u ↦ (Y u, X u))) :=
-          (integral_map hYX hk.aestronglyMeasurable).symm
-      _ = ∫ q, q.2.toReal ∂((volume : Measure (I × I)).map
-            (fun p ↦ (Y p.1, Ψ (Y p.1, p.2)))) := by rw [hΨlaw]
-      _ = _ := integral_map hT hk.aestronglyMeasurable
   by_cases hXi : IntegrableEReal X volume
   swap
-  · refine ⟨Function.uncurry f, hf, hlaw _ hf (Filter.Eventually.of_forall fun y ↦ hfκ y),
+  · exact ⟨Function.uncurry f, hf, hlaw _ hf (Filter.Eventually.of_forall fun y ↦ hfκ y),
       fun h ↦ absurd h hXi⟩
-  -- `F x = |x|`, with the value `∞` at `±∞`
-  let F : EReal → ENNReal := fun x ↦ if x = ⊤ ∨ x = ⊥ then ⊤ else ‖x.toReal‖ₑ
-  have hF : Measurable F :=
-    Measurable.ite ((measurableSet_singleton ⊤).union (measurableSet_singleton ⊥))
-      measurable_const measurable_ereal_toReal.enorm
-  have hFle : ∀ x, ‖x.toReal‖ₑ ≤ F x := fun x ↦ by
-    simp only [F]; split_ifs <;> simp
-  let G : EReal → ENNReal := fun y ↦ ∫⁻ x, F x ∂κ y
-  have hG : Measurable G := hF.lintegral_kernel
-  have hGf : ∀ y, ∫⁻ v, F (f y v) = G y := fun y ↦ by
-    simp only [G, ← hfκ y]
-    rw [lintegral_map hF (hf.of_uncurry_left)]
-  -- `G` is finite almost everywhere for the law of `Y`
-  have hGfin : ∀ᵐ y ∂(volume.map Y), G y < ⊤ := by
-    refine ae_lt_top hG ?_
-    have hYX : AEMeasurable (fun u ↦ (Y u, X u)) volume := hY.prodMk hX
-    have : ∫⁻ y, G y ∂(volume.map Y) = ∫⁻ u, F (X u) := by
-      have h := Measure.lintegral_compProd (μ := volume.map Y) (κ := κ) (hF.comp measurable_snd)
-      simp only [Function.comp_apply] at h
-      simp only [G]
-      rw [← h, compProd_map_condDistrib hY hX,
-        lintegral_map' (f := fun q : EReal × EReal ↦ F q.2)
-          (hF.comp measurable_snd).aemeasurable hYX]
-    rw [this]
-    have hae : ∀ᵐ u ∂(volume : Measure I), F (X u) = ‖(X u).toReal‖ₑ :=
-      hXi.1.mono fun u hu ↦ by simp [F, hu.1, hu.2]
-    rw [lintegral_congr_ae hae]
-    exact (hasFiniteIntegral_iff_enorm.mp hXi.2.2).ne
+  -- set `Φ (y, ·) = 0` where `κ y` is not integrable
+  let G : EReal → ENNReal := fun y ↦ ∫⁻ x, extNorm x ∂κ y
+  have hG : Measurable G := measurable_extNorm.lintegral_kernel
   let Ψ : EReal × I → EReal := fun p ↦ if G p.1 = ⊤ then 0 else f p.1 p.2
   have hΨ : Measurable Ψ :=
     Measurable.ite ((hG.comp measurable_fst) (measurableSet_singleton ⊤)) measurable_const hf
-  have hΨlaw := hlaw Ψ hΨ (hGfin.mono fun y hy ↦ by simp [Ψ, hy.ne, hfκ y])
-  refine ⟨Ψ, hΨ, hΨlaw, fun _ ↦ ⟨fun y ↦ ?_, hfub Ψ hΨ hΨlaw hXi⟩⟩
+  have hΨlaw := hlaw Ψ hΨ ((ae_lintegral_condDistrib_lt_top hX hY hXi).mono fun y hy ↦ by
+    have hy' : G y ≠ ⊤ := hy.ne
+    simp only [Ψ, hy', ite_false]
+    exact hfκ y)
+  refine ⟨Ψ, hΨ, hΨlaw, fun _ ↦
+    ⟨fun y ↦ ?_, integrable_and_integral_eq_of_map_eq hX hY hΨ hΨlaw hXi⟩⟩
   by_cases hy : G y = ⊤
   · simp only [Ψ, hy]
     exact ⟨Filter.Eventually.of_forall fun _ ↦ by simp, by simp⟩
   · simp only [Ψ, hy, ite_false]
-    have hfin : ∫⁻ v, F (f y v) < ⊤ := by rw [hGf]; exact lt_top_iff_ne_top.mpr hy
-    have hmeas : Measurable (f y) := hf.of_uncurry_left
-    refine ⟨(ae_lt_top (hF.comp hmeas) hfin.ne).mono fun v hv ↦ ?_, ?_⟩
-    · by_contra h
-      have : F (f y v) = ⊤ := by
-        have h' : f y v = ⊤ ∨ f y v = ⊥ := by tauto
-        simp only [F, h', ite_true]
-      exact hv.ne this
-    · exact ⟨(measurable_ereal_toReal.comp hmeas).aestronglyMeasurable,
-        hasFiniteIntegral_iff_enorm.mpr ((lintegral_mono fun v ↦ hFle _).trans_lt hfin)⟩
+    refine integrableEReal_of_lintegral_lt_top hf.of_uncurry_left ?_
+    rw [← lintegral_map measurable_extNorm hf.of_uncurry_left, hfκ y]
+    exact lt_top_iff_ne_top.mpr hy
+
+/-!
+### An explicit choice: the conditional quantile function
+
+Informal statement. Let $F(y, x) = κ(y)([-∞, x])$ be the conditional CDF of $X$
+given $Y = y$ (here $κ$ is `condDistrib X Y volume`) and define
+$$(X|Y)(y, v) = \inf \{x ∈ [-∞, ∞] \mid v ≤ F(y, x)\}.$$
+Then:
+
+ 0. $X|Y$ is jointly Borel measurable, and nondecreasing in $v$;
+ 1. for every $y$, the law of $(X|Y)(y, ·)$ under $λ$ is $κ(y)$; hence
+    $(u, v) ↦ (Y(u), (X|Y)(Y(u), v))$ under $λ ⊗ λ$ has the law of $(Y, X)$.
+
+Moreover, if $X$ is integrable:
+
+ 2. for almost every $y$ with respect to the law of $Y$, $(X|Y)(y, ·)$ is
+    integrable;
+ 3. the function $u ↦ ∫ (X|Y)(Y(u), v) \, dv$ is integrable;
+ 4. we have $∫ X(u) \, du = ∫ [∫ (X|Y)(Y(u), v) \, dv] \, du$.
+
+Compared to the revised statement, condition 2 is only claimed almost
+everywhere: with no modification on a null set, $κ(y)$ may fail to be
+integrable for some $y$. The key fact is the Galois connection
+$(X|Y)(y, v) ≤ x \iff v ≤ F(y, x)$, which follows from the right-continuity
+of $F(y, ·)$ and gives both measurability and the law of the sections.
+-/
+
+/-- For a finite measure `μ` on `[-∞, ∞]` and `t ≤ μ(univ)`, the generalised inverse
+of the CDF satisfies the Galois connection `Q(t) ≤ x ↔ t ≤ μ([-∞, x])`. -/
+lemma sInf_le_iff_le_measure_Iic (μ : Measure EReal) [IsFiniteMeasure μ] {t : ENNReal}
+    (ht : t ≤ μ Set.univ) (x : EReal) :
+    sInf {z | t ≤ μ (Set.Iic z)} ≤ x ↔ t ≤ μ (Set.Iic x) := by
+  refine ⟨fun h ↦ ?_, fun h ↦ sInf_le h⟩
+  rcases eq_top_or_lt_top x with rfl | hx
+  · simpa using ht
+  -- `t ≤ μ([-∞, r])` for all `r > x`, then use right-continuity of the CDF
+  have key : ∀ r ∈ Set.Ioi x, t ≤ μ (Set.Iic r) := fun r hr ↦ by
+    obtain ⟨z, hz, hzr⟩ := sInf_lt_iff.mp (h.trans_lt hr)
+    exact hz.trans (measure_mono (Set.Iic_subset_Iic.mpr hzr.le))
+  have tend := tendsto_measure_biInter_gt (μ := μ) (s := Set.Iic) (a := x)
+    (fun _ _ ↦ measurableSet_Iic.nullMeasurableSet) (fun _ _ _ hij ↦ Set.Iic_subset_Iic.mpr hij)
+    ⟨⊤, hx, measure_ne_top _ _⟩
+  have hI : ⋂ r > x, Set.Iic r = Set.Iic x := by
+    ext z
+    simp only [Set.mem_iInter, Set.mem_Iic]
+    exact ⟨fun h ↦ le_of_forall_gt_imp_ge_of_dense h, fun h r hr ↦ h.trans hr.le⟩
+  rw [hI] at tend
+  have : (nhdsWithin x (Set.Ioi x)).NeBot := nhdsGT_neBot_of_exists_gt ⟨⊤, hx⟩
+  exact ge_of_tendsto tend (eventually_nhdsWithin_of_forall key)
+
+/-- The conditional quantile function: `(X|Y)(y, v) = inf {x | v ≤ F(y, x)}` where
+`F(y, x) = κ(y)([-∞, x])` is the conditional CDF of `X` given `Y = y`. -/
+noncomputable def condQuantile (X Y : I → EReal) (p : EReal × I) : EReal :=
+  sInf {x | ENNReal.ofReal p.2 ≤ condDistrib X Y volume p.1 (Set.Iic x)}
+
+lemma condQuantile_le_iff (X Y : I → EReal) (y : EReal) (v : I) (x : EReal) :
+    condQuantile X Y (y, v) ≤ x ↔ ENNReal.ofReal v ≤ condDistrib X Y volume y (Set.Iic x) :=
+  sInf_le_iff_le_measure_Iic _ (by simpa using ENNReal.ofReal_le_one.mpr v.2.2) x
+
+lemma monotone_condQuantile (X Y : I → EReal) (y : EReal) :
+    Monotone fun v ↦ condQuantile X Y (y, v) := fun _ _ hvw ↦
+  sInf_le_sInf fun _ hx ↦ (ENNReal.ofReal_le_ofReal hvw).trans hx
+
+lemma measurable_condQuantile (X Y : I → EReal) : Measurable (condQuantile X Y) := by
+  refine measurable_of_Iic fun x ↦ ?_
+  have : condQuantile X Y ⁻¹' Set.Iic x =
+      {p | ENNReal.ofReal p.2 ≤ condDistrib X Y volume p.1 (Set.Iic x)} := by
+    ext p; exact condQuantile_le_iff X Y p.1 p.2 x
+  rw [this]
+  exact measurableSet_le
+    (ENNReal.measurable_ofReal.comp (measurable_subtype_coe.comp measurable_snd))
+    (((condDistrib X Y volume).measurable_coe measurableSet_Iic).comp measurable_fst)
+
+/-- Every section of the conditional quantile function has the conditional law. -/
+lemma map_condQuantile (X Y : I → EReal) (y : EReal) :
+    volume.map (fun v ↦ condQuantile X Y (y, v)) = condDistrib X Y volume y := by
+  have hm : Measurable fun v ↦ condQuantile X Y (y, v) :=
+    (measurable_condQuantile X Y).comp measurable_prodMk_left
+  refine Measure.ext_of_Iic _ _ fun x ↦ ?_
+  set F := condDistrib X Y volume y (Set.Iic x)
+  have hF : F ≠ ⊤ := measure_ne_top _ _
+  have hF1 : F.toReal ∈ I := ⟨ENNReal.toReal_nonneg,
+    ENNReal.toReal_le_of_le_ofReal zero_le_one (by simpa using prob_le_one)⟩
+  rw [Measure.map_apply hm measurableSet_Iic]
+  have : (fun v ↦ condQuantile X Y (y, v)) ⁻¹' Set.Iic x = Set.Iic ⟨F.toReal, hF1⟩ := by
+    ext v
+    simp only [Set.mem_preimage, Set.mem_Iic, condQuantile_le_iff, ← Subtype.coe_le_coe]
+    exact ENNReal.ofReal_le_iff_le_toReal hF
+  rw [this, unitInterval.volume_Iic, ENNReal.ofReal_toReal hF]
+
+/-- **Explicit variant of `exists_cond`.** The conditional quantile function
+`(X|Y)(y, v) = inf {x | v ≤ F(y, x)}`, with `F(y, ·)` the conditional CDF of `X`
+given `Y = y`, is jointly measurable, nondecreasing in `v`, every section
+`(X|Y)(y, ·)` has the conditional law of `X` given `Y = y`, and conditions 1, 3
+and 4 hold. Condition 2 only holds for `P_Y`-almost every `y`: the conditional
+law can fail to be integrable on a `P_Y`-null set of `y`. -/
+theorem condQuantile_spec (X Y : I → EReal) (hX : AEMeasurable X) (hY : AEMeasurable Y) :
+    -- 0. joint measurability
+    Measurable (condQuantile X Y) ∧
+    -- monotonicity in `v`
+    (∀ y, Monotone fun v ↦ condQuantile X Y (y, v)) ∧
+    -- every section has the conditional law
+    (∀ y, volume.map (fun v ↦ condQuantile X Y (y, v)) = condDistrib X Y volume y) ∧
+    -- 1. `(u, v) ↦ (Y u, (X|Y) (Y u, v))` under `λ ⊗ λ` has the law of `(Y, X)` under `λ`
+    (volume : Measure (I × I)).map (fun p ↦ (Y p.1, condQuantile X Y (Y p.1, p.2))) =
+      (volume : Measure I).map (fun u ↦ (Y u, X u)) ∧
+    (IntegrableEReal X volume →
+      -- 2'. almost every section is integrable
+      (∀ᵐ y ∂(volume.map Y), IntegrableEReal (fun v ↦ condQuantile X Y (y, v)) volume) ∧
+      -- 3. the inner integral is integrable
+      Integrable (fun u ↦ ∫ v, (condQuantile X Y (Y u, v)).toReal) ∧
+      -- 4. tower property
+      ∫ u, (X u).toReal = ∫ u, ∫ v, (condQuantile X Y (Y u, v)).toReal) := by
+  have hQ := measurable_condQuantile X Y
+  have hlaw := (map_eq_compProd hY (condDistrib X Y volume) hQ
+    (Filter.Eventually.of_forall fun y ↦ map_condQuantile X Y y)).trans
+    (compProd_map_condDistrib hY hX)
+  refine ⟨hQ, monotone_condQuantile X Y, map_condQuantile X Y, hlaw, fun hXi ↦
+    ⟨?_, integrable_and_integral_eq_of_map_eq hX hY hQ hlaw hXi⟩⟩
+  filter_upwards [ae_lintegral_condDistrib_lt_top hX hY hXi] with y hy
+  have hm : Measurable fun v ↦ condQuantile X Y (y, v) := hQ.comp measurable_prodMk_left
+  refine integrableEReal_of_lintegral_lt_top hm ?_
+  rwa [← lintegral_map measurable_extNorm hm, map_condQuantile]
