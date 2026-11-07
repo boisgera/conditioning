@@ -264,7 +264,10 @@ Moreover, if $X$ is integrable:
 
 Compared to the revised statement, condition 2 is only claimed almost
 everywhere: with no modification on a null set, $κ(y)$ may fail to be
-integrable for some $y$. The key fact is the Galois connection
+integrable for some $y$. The patched version `condQuantilePatched`, equal to
+$0$ at the $y$ where $∫ |x| \, κ(y)(dx) = ∞$ and to $(X|Y)(y, v)$ elsewhere,
+satisfies condition 2 for every $y$ (when $X$ is integrable); it agrees with
+$X|Y$ for almost every $y$. The key fact is the Galois connection
 $(X|Y)(y, v) ≤ x \iff v ≤ F(y, x)$, which follows from the right-continuity
 of $F(y, ·)$ and gives both measurability and the law of the sections.
 -/
@@ -365,3 +368,70 @@ theorem condQuantile_spec (X Y : I → EReal) (hX : AEMeasurable X) (hY : AEMeas
   have hm : Measurable fun v ↦ condQuantile X Y (y, v) := hQ.comp measurable_prodMk_left
   refine integrableEReal_of_lintegral_lt_top hm ?_
   rwa [← lintegral_map measurable_extNorm hm, map_condQuantile]
+
+/-- The conditional quantile function, set to `0` at the `y` for which the conditional
+law `κ(y)` is not integrable (i.e. `∫ |x| dκ(y) = ∞`, with `|±∞| = ∞`). -/
+noncomputable def condQuantilePatched (X Y : I → EReal) (p : EReal × I) : EReal :=
+  if ∫⁻ x, extNorm x ∂(condDistrib X Y volume p.1) = ⊤ then 0 else condQuantile X Y p
+
+lemma measurable_condQuantilePatched (X Y : I → EReal) :
+    Measurable (condQuantilePatched X Y) :=
+  Measurable.ite ((measurable_extNorm.lintegral_kernel.comp measurable_fst)
+    (measurableSet_singleton ⊤)) measurable_const (measurable_condQuantile X Y)
+
+/-- If `X` is integrable, the patched quantile function agrees with `condQuantile` for
+`P_Y`-almost every `y`. -/
+lemma ae_condQuantilePatched_eq {X Y : I → EReal} (hX : AEMeasurable X) (hY : AEMeasurable Y)
+    (hXi : IntegrableEReal X volume) :
+    ∀ᵐ y ∂(volume.map Y), (fun v ↦ condQuantilePatched X Y (y, v)) =
+      fun v ↦ condQuantile X Y (y, v) := by
+  filter_upwards [ae_lintegral_condDistrib_lt_top hX hY hXi] with y hy
+  ext v
+  simp [condQuantilePatched, hy.ne]
+
+/-- **Explicit variant of `exists_cond`, with condition 2 for every `y`.** For `X`
+integrable, the patched conditional quantile function satisfies all the conditions of
+the revised statement: it is jointly measurable, nondecreasing in `v`, its sections
+have the conditional law for `P_Y`-almost every `y`, it reproduces the law of `(Y, X)`,
+every section is integrable, and the tower property holds. -/
+theorem condQuantilePatched_spec (X Y : I → EReal) (hX : AEMeasurable X) (hY : AEMeasurable Y)
+    (hXi : IntegrableEReal X volume) :
+    -- 0. joint measurability
+    Measurable (condQuantilePatched X Y) ∧
+    -- monotonicity in `v`
+    (∀ y, Monotone fun v ↦ condQuantilePatched X Y (y, v)) ∧
+    -- almost every section has the conditional law
+    (∀ᵐ y ∂(volume.map Y),
+      volume.map (fun v ↦ condQuantilePatched X Y (y, v)) = condDistrib X Y volume y) ∧
+    -- 1. `(u, v) ↦ (Y u, (X|Y) (Y u, v))` under `λ ⊗ λ` has the law of `(Y, X)` under `λ`
+    (volume : Measure (I × I)).map (fun p ↦ (Y p.1, condQuantilePatched X Y (Y p.1, p.2))) =
+      (volume : Measure I).map (fun u ↦ (Y u, X u)) ∧
+    -- 2. every section is integrable
+    (∀ y, IntegrableEReal (fun v ↦ condQuantilePatched X Y (y, v)) volume) ∧
+    -- 3. the inner integral is integrable
+    Integrable (fun u ↦ ∫ v, (condQuantilePatched X Y (Y u, v)).toReal) ∧
+    -- 4. tower property
+    ∫ u, (X u).toReal = ∫ u, ∫ v, (condQuantilePatched X Y (Y u, v)).toReal := by
+  have hQ := measurable_condQuantilePatched X Y
+  have hsec : ∀ᵐ y ∂(volume.map Y),
+      volume.map (fun v ↦ condQuantilePatched X Y (y, v)) = condDistrib X Y volume y := by
+    filter_upwards [ae_condQuantilePatched_eq hX hY hXi] with y hy
+    rw [hy, map_condQuantile]
+  have hlaw := (map_eq_compProd hY (condDistrib X Y volume) hQ hsec).trans
+    (compProd_map_condDistrib hY hX)
+  refine ⟨hQ, fun y ↦ ?_, hsec, hlaw, fun y ↦ ?_,
+    integrable_and_integral_eq_of_map_eq hX hY hQ hlaw hXi⟩
+  · by_cases hy : ∫⁻ x, extNorm x ∂(condDistrib X Y volume y) = ⊤
+    · simp only [condQuantilePatched, hy, ite_true]
+      exact monotone_const
+    · simp only [condQuantilePatched, hy, ite_false]
+      exact monotone_condQuantile X Y y
+  · by_cases hy : ∫⁻ x, extNorm x ∂(condDistrib X Y volume y) = ⊤
+    · simp only [condQuantilePatched, hy, ite_true]
+      exact ⟨Filter.Eventually.of_forall fun _ ↦ by simp, by simp⟩
+    · simp only [condQuantilePatched, hy, ite_false]
+      have hm : Measurable fun v ↦ condQuantile X Y (y, v) :=
+        (measurable_condQuantile X Y).comp measurable_prodMk_left
+      refine integrableEReal_of_lintegral_lt_top hm ?_
+      rw [← lintegral_map measurable_extNorm hm, map_condQuantile]
+      exact lt_top_iff_ne_top.mpr hy
